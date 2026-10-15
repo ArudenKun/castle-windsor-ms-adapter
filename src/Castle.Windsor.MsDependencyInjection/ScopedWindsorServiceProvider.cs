@@ -9,14 +9,12 @@ namespace Castle.Windsor.MsDependencyInjection
     /// <summary>
     /// Implements <see cref="IServiceProvider"/>.
     /// </summary>
-    public class ScopedWindsorServiceProvider :
-        IServiceProvider,
-        ISupportRequiredService,
-        IServiceProviderIsService,
-        IKeyedServiceProvider,
-        IServiceProviderIsKeyedService
+    public class ScopedWindsorServiceProvider
+        : ISupportRequiredService,
+            IKeyedServiceProvider,
+            IServiceProviderIsKeyedService
     {
-        private static readonly AsyncLocal<int> _isInResolvingCounter = new AsyncLocal<int>();
+        private static readonly AsyncLocal<int> IsInResolvingCounter = new();
 
         private readonly IWindsorContainer _container;
 
@@ -28,7 +26,10 @@ namespace Castle.Windsor.MsDependencyInjection
         // Did it primarily for the parity unit tests to pass
         private Dictionary<KeyedServiceId, object> _anyKeyCollectionCache = new();
 
-        public ScopedWindsorServiceProvider(IWindsorContainer container, MsLifetimeScopeProvider msLifetimeScopeProvider)
+        public ScopedWindsorServiceProvider(
+            IWindsorContainer container,
+            MsLifetimeScopeProvider msLifetimeScopeProvider
+        )
         {
             _container = container;
             _registry = container.Resolve<KeyedServiceRegistry>();
@@ -49,15 +50,19 @@ namespace Castle.Windsor.MsDependencyInjection
         {
             using (MsLifetimeScope.Using(OwnMsLifetimeScope))
             {
-                _isInResolvingCounter.Value++;
+                IsInResolvingCounter.Value++;
 
                 try
                 {
-                    return ResolveInstanceOrNull(serviceType, isOptional, track: _isInResolvingCounter.Value == 1);
+                    return ResolveInstanceOrNull(
+                        serviceType,
+                        isOptional,
+                        track: IsInResolvingCounter.Value == 1
+                    );
                 }
                 finally
                 {
-                    _isInResolvingCounter.Value--;
+                    IsInResolvingCounter.Value--;
                 }
             }
         }
@@ -67,7 +72,11 @@ namespace Castle.Windsor.MsDependencyInjection
             // Check if given service is directly registered as a non-keyed component
             if (ServiceResolveHelper.HasNonKeyedComponent(_container, _registry, serviceType))
             {
-                return ServiceResolveHelper.Resolve(_container, serviceType, track ? OwnMsLifetimeScope : null);
+                return ServiceResolveHelper.Resolve(
+                    _container,
+                    serviceType,
+                    track ? OwnMsLifetimeScope : null
+                );
             }
 
             // Check if requested IEnumerable<TService>
@@ -76,9 +85,18 @@ namespace Castle.Windsor.MsDependencyInjection
             if (ServiceResolveHelper.IsEnumerable(serviceType))
             {
                 var itemType = serviceType.GenericTypeArguments[0];
-                var keys = ServiceResolveHelper.GetNonKeyedHandlerNames(_container, _registry, itemType);
+                var keys = ServiceResolveHelper.GetNonKeyedHandlerNames(
+                    _container,
+                    _registry,
+                    itemType
+                );
 
-                return ServiceResolveHelper.ResolveAllByName(_container, itemType, keys, track ? OwnMsLifetimeScope : null);
+                return ServiceResolveHelper.ResolveAllByName(
+                    _container,
+                    itemType,
+                    keys,
+                    track ? OwnMsLifetimeScope : null
+                );
             }
 
             if (isOptional)
@@ -90,7 +108,9 @@ namespace Castle.Windsor.MsDependencyInjection
             // Match MS DI contract: GetRequiredService / ISupportRequiredService must throw
             // InvalidOperationException (not Castle's ComponentNotFoundException) when the
             // service is not registered.
-            throw new InvalidOperationException($"No service for type '{serviceType}' has been registered.");
+            throw new InvalidOperationException(
+                $"No service for type '{serviceType}' has been registered."
+            );
         }
 
         public object GetKeyedService(Type serviceType, object serviceKey)
@@ -103,35 +123,47 @@ namespace Castle.Windsor.MsDependencyInjection
             var instance = GetKeyedServiceInternal(serviceType, serviceKey, isOptional: false);
             if (instance == null)
             {
-                throw new InvalidOperationException($"No service for type '{serviceType}' has been registered with key '{serviceKey}'.");
+                throw new InvalidOperationException(
+                    $"No service for type '{serviceType}' has been registered with key '{serviceKey}'."
+                );
             }
+
             return instance;
         }
 
         private object GetKeyedServiceInternal(Type serviceType, object serviceKey, bool isOptional)
         {
-            if (serviceType == null) throw new ArgumentNullException(nameof(serviceType));
+            if (serviceType == null)
+                throw new ArgumentNullException(nameof(serviceType));
             if (serviceKey == null)
             {
                 return GetServiceInternal(serviceType, isOptional);
             }
 
-            if (serviceKey == KeyedService.AnyKey && !ServiceResolveHelper.IsEnumerable(serviceType))
+            if (
+                serviceKey == KeyedService.AnyKey
+                && !ServiceResolveHelper.IsEnumerable(serviceType)
+            )
             {
-                throw new InvalidOperationException($"The KeyedService.AnyKey can be used to resolve all services only");
+                throw new InvalidOperationException(
+                    $"The KeyedService.AnyKey can be used to resolve all services only"
+                );
             }
 
             using (MsLifetimeScope.Using(OwnMsLifetimeScope))
             {
-                _isInResolvingCounter.Value++;
+                IsInResolvingCounter.Value++;
 
                 try
                 {
-                    return ResolveKeyedInstanceOrNull(new KeyedServiceId(serviceType, serviceKey), _isInResolvingCounter.Value == 1);
+                    return ResolveKeyedInstanceOrNull(
+                        new KeyedServiceId(serviceType, serviceKey),
+                        IsInResolvingCounter.Value == 1
+                    );
                 }
                 finally
                 {
-                    _isInResolvingCounter.Value--;
+                    IsInResolvingCounter.Value--;
                 }
             }
         }
@@ -153,7 +185,12 @@ namespace Castle.Windsor.MsDependencyInjection
                 var itemServiceId = new KeyedServiceId(itemType, serviceId.Key);
                 var keys = _registry.ResolveAllWindsorKeysForService(itemServiceId);
 
-                var result = ServiceResolveHelper.ResolveAllByName(_container, itemType, keys, track ? OwnMsLifetimeScope : null);
+                var result = ServiceResolveHelper.ResolveAllByName(
+                    _container,
+                    itemType,
+                    keys,
+                    track ? OwnMsLifetimeScope : null
+                );
 
                 // Use locking to not corrupt the collection.
                 // It's okay if we resolve it multiple times in case of concurrency.
@@ -168,7 +205,12 @@ namespace Castle.Windsor.MsDependencyInjection
             var windsorKey = _registry.TryResolveWindsorKeyForService(serviceId);
             if (windsorKey != null)
             {
-                return ServiceResolveHelper.ResolveByName(_container, windsorKey, serviceId.ServiceType, track ? OwnMsLifetimeScope : null);
+                return ServiceResolveHelper.ResolveByName(
+                    _container,
+                    windsorKey,
+                    serviceId.ServiceType,
+                    track ? OwnMsLifetimeScope : null
+                );
             }
 
             return null;
@@ -198,17 +240,20 @@ namespace Castle.Windsor.MsDependencyInjection
                 return true;
             }
 
-            return serviceType == typeof(IServiceProvider) ||
-                   serviceType == typeof(IServiceScopeFactory) ||
-                   serviceType == typeof(IServiceProviderIsService) ||
-                   serviceType == typeof(IKeyedServiceProvider) ||
-                   serviceType == typeof(IServiceProviderIsKeyedService);
+            return serviceType == typeof(IServiceProvider)
+                || serviceType == typeof(IServiceScopeFactory)
+                || serviceType == typeof(IServiceProviderIsService)
+                || serviceType == typeof(IKeyedServiceProvider)
+                || serviceType == typeof(IServiceProviderIsKeyedService);
         }
 
         public bool IsKeyedService(Type serviceType, object serviceKey)
         {
-            ArgumentNullException.ThrowIfNull(serviceType);
-            
+            if (serviceType is null)
+            {
+                throw new ArgumentNullException(nameof(serviceType));
+            }
+
             if (serviceKey == null)
             {
                 return IsService(serviceType);

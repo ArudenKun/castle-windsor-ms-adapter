@@ -2,11 +2,13 @@
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+#if NET8_0_OR_GREATER
+using System.Collections.Frozen;
+#endif
 
 namespace Castle.Windsor.MsDependencyInjection.Keyed;
 
@@ -33,7 +35,11 @@ internal sealed class TypeKeyedMetadataRegistry
         return GetTypeMetadata(declaringType).HasKeyedParameters;
     }
 
-    public bool TryGet(Type declaringType, ParameterInfo parameter, out KeyedParameterInfo? parameterInfo)
+    public bool TryGet(
+        Type declaringType,
+        ParameterInfo parameter,
+        out KeyedParameterInfo? parameterInfo
+    )
     {
         if (GetTypeMetadata(declaringType).TryGetParameter(parameter, out parameterInfo))
         {
@@ -73,8 +79,11 @@ internal sealed class TypeKeyedMetadataRegistry
                     metadata.Add(ctor.MetadataToken, slots);
                 }
             }
-
+#if NET8_0_OR_GREATER
             return new TypeKeyedMetadata(metadata?.ToFrozenDictionary());
+#else
+            return new TypeKeyedMetadata(metadata);
+#endif
         }
 
         static KeyedParameterInfo? InspectParameter(ParameterInfo parameter)
@@ -86,7 +95,8 @@ internal sealed class TypeKeyedMetadataRegistry
                     KeyedParameterKind.FromKeyed,
                     fromKeyed.LookupMode,
                     fromKeyed.Key,
-                    parameter.ParameterType);
+                    parameter.ParameterType
+                );
             }
 
             if (parameter.IsDefined(typeof(ServiceKeyAttribute), inherit: true))
@@ -95,18 +105,28 @@ internal sealed class TypeKeyedMetadataRegistry
                     KeyedParameterKind.ServiceKey,
                     ServiceKeyLookupMode.InheritKey,
                     null,
-                    parameter.ParameterType);
+                    parameter.ParameterType
+                );
             }
 
             return null;
         }
     }
 
+#if NET8_0_OR_GREATER
     private sealed record TypeKeyedMetadata(FrozenDictionary<int, KeyedParameterInfo?[]>? Metadata)
+#else
+    private sealed record TypeKeyedMetadata(
+        IReadOnlyDictionary<int, KeyedParameterInfo?[]>? Metadata
+    )
+#endif
     {
         public bool HasKeyedParameters => Metadata != null;
 
-        public bool TryGetParameter(ParameterInfo parameter, [NotNullWhen(true)] out KeyedParameterInfo? info)
+        public bool TryGetParameter(
+            ParameterInfo parameter,
+            [NotNullWhen(true)] out KeyedParameterInfo? info
+        )
         {
             info = null;
 
@@ -115,8 +135,10 @@ internal sealed class TypeKeyedMetadataRegistry
                 return false;
             }
 
-            if (!Metadata.TryGetValue(ctor.MetadataToken, out var slots)
-                || (uint)parameter.Position >= (uint)slots.Length)
+            if (
+                !Metadata.TryGetValue(ctor.MetadataToken, out var slots)
+                || (uint)parameter.Position >= (uint)slots.Length
+            )
             {
                 return false;
             }
